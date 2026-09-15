@@ -117,6 +117,17 @@ export const contentWriteRateLimit = createLimiter({
   message: '发布或评论过于频繁，请稍后再试'
 })
 
+// Interactions (like / dislike / poll vote) are de-duplicated by a visitor cookie that a
+// client can simply drop and get re-issued, so an attacker could otherwise refresh their
+// identity and inflate counters without limit. Cap how many times a single IP may react
+// to the same message: normal users stay far below this even with several devices.
+export const reactionPerMessageRateLimit = createLimiter({
+  windowMs: 60 * 60 * 1000,
+  limit: config.rateLimitReactionPerMessage,
+  keyGenerator: (req) => `${ipKey(req)}:message:${String(req.params?.messageId || '')}`,
+  message: '对同一条留言的互动次数过多，请稍后再试'
+})
+
 export const interactionRateLimit = createLimiter({
   windowMs: 10 * 60 * 1000,
   limit: config.rateLimitInteraction,

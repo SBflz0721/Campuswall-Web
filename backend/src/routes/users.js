@@ -2,6 +2,7 @@ import express from 'express'
 import multer from 'multer'
 import { config } from '../config.js'
 import { authenticatedAccount, sessionCookieName, requireTrustedOrigin } from '../services/auth.js'
+import { reviewPostContent } from '../services/contentReview.js'
 import { messageStore } from '../services/messageStore.js'
 import { verifyCaptcha } from '../services/captcha.js'
 import { consumeUploadBytes, contentWriteRateLimit, emailChangeRateLimit, loginRateLimit, passwordChangeRateLimit, registerRateLimit, uploadConcurrencyLimit, uploadRateLimit } from '../services/rateLimit.js'
@@ -312,6 +313,15 @@ usersRouter.delete('/me/favorites/:messageId', requireTrustedOrigin, requireUser
 usersRouter.put('/me/profile', requireTrustedOrigin, form, requireUser, asyncRoute(async (req, res) => {
   if (String(req.body?.bio || '').length > 200) {
     res.status(400).json({ success: false, error: '个人简介不能超过 200 个字符' })
+    return
+  }
+  // Nickname and bio are rendered as the author name on every post, but previously went
+  // through no content check at all, so banned words could be parked there permanently.
+  const profileReview = await reviewPostContent(
+    [String(req.body?.nickname || ''), String(req.body?.bio || '')].filter(Boolean).join('\n')
+  )
+  if (profileReview.blocked) {
+    res.status(400).json({ success: false, error: '昵称或简介包含不适宜词语，请修改后重试' })
     return
   }
   const user = await userStore.updateProfile(req.user.id, {

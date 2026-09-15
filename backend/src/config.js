@@ -117,6 +117,7 @@ export const config = {
   rateLimitRegister: intEnv('RATE_LIMIT_REGISTER', 10, { min: 2, max: 500 }),
   rateLimitWrite: intEnv('RATE_LIMIT_WRITE', 40, { min: 5, max: 10000 }),
   rateLimitInteraction: intEnv('RATE_LIMIT_INTERACTION', 240, { min: 20, max: 50000 }),
+  rateLimitReactionPerMessage: intEnv('RATE_LIMIT_REACTION_PER_MESSAGE', 12, { min: 3, max: 1000 }),
   rateLimitUpload: intEnv('RATE_LIMIT_UPLOAD', 240, { min: 20, max: 50000 }),
   rateLimitUploadBytes: intEnv('RATE_LIMIT_UPLOAD_BYTES', 256 * 1024 * 1024, { min: 1024 * 1024, max: 10 * 1024 * 1024 * 1024 }),
   maxConcurrentUploadsPerIp: intEnv('MAX_CONCURRENT_UPLOADS_PER_IP', 3, { min: 1, max: 100 }),

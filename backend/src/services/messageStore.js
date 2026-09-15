@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { createPostgresPool, initMessageSchema } from './postgres.js'
 import { nowText } from './jsonStore.js'
+import { reviewPostContent } from './contentReview.js'
 import { isLostFoundMessage, isLostFoundTag, lostFoundTags, normalizeLostFoundType } from './lostFound.js'
 import { moderationNotifier } from './moderationNotifier.js'
 import { editedPublicationStateFor, publicationStateFor } from './publicationPolicy.js'
@@ -829,6 +830,10 @@ export class MessageStore {
   }
 
   async commentMessage({ id, text, files = [], referId = '', user = null }) {
+    // Comments used to be written straight to `visible`, so banned text could be posted
+    // through this path without ever hitting the lexicon or the review queue. Run the
+    // same content check the post path uses and park hits in the pending queue.
+    const review = await reviewPostContent(text)
     const result = await this.mutateStoredMessage(id, async (message) => {
       if (!this.isPublicMessage(message)) {
         return { message, result: this.unavailableMessageResult(message, '评论') }
@@ -847,7 +852,8 @@ export class MessageStore {
         likes: 0,
         dislikes: 0,
         files,
-        moderation_status: 'visible'
+        moderation_status: review.blocked ? 'pending' : 'visible',
+        review_hits: review.blocked ? (review.hits || []) : []
       }
       if (replyTarget) {
         comment.refer_id = String(replyTarget.id)
@@ -984,7 +990,7 @@ export class MessageStore {
     return result || { success: false, error: '留言不存在', code: 'NOT_FOUND' }
   }
 
-  async reactMessage(id, reaction, reactorKey, legacyReaction = 0) {
+  async reactMessage(id, reaction, reactorKey) {
     const normalizedReaction = Number(reaction) === -1 ? -1 : 1
     const result = await this.mutateStoredMessage(id, async (message, client) => {
       if (!this.isPublicMessage(message)) {
@@ -997,7 +1003,11 @@ export class MessageStore {
         [messageId, reactorKey]
       )
       const storedReaction = existingRow.rowCount ? Number(existingRow.rows[0].reaction) : 0
-      const currentReaction = storedReaction || ([-1, 1].includes(Number(legacyReaction)) ? Number(legacyReaction) : 0)
+      // Only the stored row counts. The previous code also trusted a client-supplied
+      // "already reacted" hint taken from the likes/dislikes cookie, which let anyone
+      // forge it and repeatedly cancel a reaction that was never stored - decrementing
+      // the like/dislike counter of any post on demand.
+      const currentReaction = storedReaction
 
       if (currentReaction === normalizedReaction) {
         if (storedReaction) {
@@ -1038,12 +1048,12 @@ export class MessageStore {
     return result || { success: false, error: 'Message not found' }
   }
 
-  likeMessage(id, reactorKey, legacyReaction = 0) {
-    return this.reactMessage(id, 1, reactorKey, legacyReaction)
+  likeMessage(id, reactorKey) {
+    return this.reactMessage(id, 1, reactorKey)
   }
 
-  dislikeMessage(id, reactorKey, legacyReaction = 0) {
-    return this.reactMessage(id, -1, reactorKey, legacyReaction)
+  dislikeMessage(id, reactorKey) {
+    return this.reactMessage(id, -1, reactorKey)
   }
 
   async votePoll(id, optionId, voterKey) {

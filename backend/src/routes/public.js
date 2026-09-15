@@ -1,5 +1,6 @@
 import express from 'express'
 import multer from 'multer'
+import { createHash } from 'node:crypto'
 import { config } from '../config.js'
 import { authenticatedAccount, requireTrustedOrigin } from '../services/auth.js'
 import { visitorKeyFromRequest } from '../services/visitorIdentity.js'
@@ -26,6 +27,13 @@ const reportCategories = {
 }
 
 const cookieIds = (req, name) => messageStore.parseCookieIds(req.cookies?.[name] || '')
+
+// Hashed client address used only to de-duplicate reports. Kept out of every public
+// projection (publicReport builds an explicit allow-list).
+const reportSourceKey = (req) => createHash('sha256')
+  .update(String(req.ip || req.socket?.remoteAddress || 'unknown'))
+  .digest('hex')
+  .slice(0, 24)
 const queryIndex = (value, fallback) => {
   const next = Math.floor(Number(value))
   return Number.isFinite(next) ? Math.max(next, 0) : fallback
@@ -218,7 +226,7 @@ publicRouter.post('/help/report/:messageId', requireTrustedOrigin, feedbackRateL
       ...report,
       target_type: 'message',
       target_excerpt: String(message.text || ((message.files || []).length ? '附件留言' : '')).slice(0, 200)
-    })
+    }, { sourceKey: reportSourceKey(req) })
     res.json({ success: true, report_id: created.id })
   } catch (error) {
     res.status(error?.statusCode || 400).json({ success: false, error: error.message || '举报提交失败' })
@@ -246,7 +254,7 @@ publicRouter.post('/help/report/:messageId/comment/:commentId', requireTrustedOr
       target_type: 'comment',
       comment_id: commentId,
       target_excerpt: String(comment.text || ((comment.files || []).length ? '附件评论' : '')).slice(0, 200)
-    })
+    }, { sourceKey: reportSourceKey(req) })
     res.json({ success: true, report_id: created.id })
   } catch (error) {
     res.status(error?.statusCode || 400).json({ success: false, error: error.message || '举报提交失败' })

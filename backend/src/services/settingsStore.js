@@ -162,7 +162,12 @@ const splitSensitiveWords = (value) => {
   return source.map((word) => String(word || '').trim()).filter(Boolean)
 }
 
-const normalizeMatchText = (value) => String(value || '').normalize('NFKC').toLowerCase().replace(/[\u200b-\u200d\ufeff]/g, '')
+const normalizeMatchText = (value) => String(value || '')
+  .normalize('NFKC')
+  .toLowerCase()
+  // Strip every separator (punctuation/symbols/whitespace/zero-width) so a banned word
+  // cannot be smuggled through by inserting characters inside it.
+  .replace(/[^\p{L}\p{N}]+/gu, '')
 
 const normalizeSensitiveWords = (value) => {
   const words = splitSensitiveWords(value).filter((word) => word.length <= 50)

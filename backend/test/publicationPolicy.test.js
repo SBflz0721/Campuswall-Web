@@ -55,15 +55,14 @@ test('guest and ordinary-user confessions follow AI review while privileged auth
   }
 })
 
-test('lost-and-found posts publish immediately while authentication remains a route concern', async () => {
-  assert.deepEqual(
-    await publicationStateFor({ user: { role: 'user' }, lostFound: { kind: 'lost' } }),
-    visible('lost_found')
-  )
-  assert.deepEqual(
-    await publicationStateFor({ user: { role: 'user' }, lostFound: { kind: 'found' } }),
-    visible('lost_found')
-  )
+test('lost-and-found posts go through content review instead of publishing immediately', async () => {
+  // Lost-and-found used to skip the lexicon entirely, so banned text could be published
+  // to the public wall unreviewed. It now follows the same review path as regular posts.
+  const clean = await publicationStateFor({ user: { role: 'user' }, lostFound: { kind: 'lost' }, text: '捡到一张校园卡' })
+  assert.equal(clean.moderation_status, 'visible')
+  assert.equal(clean.review_source, 'lexicon_clean')
+  const blocked = await publicationStateFor({ user: { role: 'user' }, lostFound: { kind: 'lost' }, text: '下流' })
+  assert.equal(blocked.moderation_status, 'pending')
 })
 
 test('an explicit moderator return remains pending after an owner edit', async () => {
@@ -82,10 +81,12 @@ test('owner edits follow the same confession and lost-and-found publication matr
     await editedPublicationStateFor({ message: {}, tags: ['表白'], user: { role: 'admin' } }),
     visible('privileged_author')
   )
-  assert.deepEqual(
-    await editedPublicationStateFor({ message: {}, tags: ['失物招领'], user: { role: 'user' }, lostFound: { kind: 'found' } }),
-    visible('lost_found')
-  )
+  // Lost-and-found edits are reviewed like any other post instead of bypassing the lexicon.
+  const lostFoundEdit = await editedPublicationStateFor({
+    message: {}, tags: ['失物招领'], user: { role: 'user' }, lostFound: { kind: 'found' }, text: '一张干净便签'
+  })
+  assert.equal(lostFoundEdit.moderation_status, 'visible')
+  assert.equal(lostFoundEdit.review_source, 'lexicon_clean')
 })
 
 test('returning a published post records a moderator hold', async () => {

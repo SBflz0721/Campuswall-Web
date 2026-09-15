@@ -17,12 +17,14 @@ export const visiblePublication = (reason, extra = {}) => ({
   review_hits: extra.review_hits || []
 })
 
-export const immediatePublicationState = ({ user = null, admin = null, lostFound = null } = {}) => {
-  let reason = ''
-  if ((admin && (!Array.isArray(admin.capabilities) || hasCapability(admin, 'content.publish.bypass_review')))
-    || hasCapability(user, 'content.publish.bypass_review')) reason = 'privileged_author'
-  else if (lostFound && typeof lostFound === 'object') reason = 'lost_found'
-  return reason ? visiblePublication(reason) : null
+export const immediatePublicationState = ({ user = null, admin = null } = {}) => {
+  const privileged = (admin && (!Array.isArray(admin.capabilities) || hasCapability(admin, 'content.publish.bypass_review')))
+    || hasCapability(user, 'content.publish.bypass_review')
+  // Lost-and-found posts no longer bypass review: only privileged authors with the
+  // explicit bypass capability publish immediately. Everything else goes through the
+  // lexicon / AI check below, so lost-and-found text can no longer be used to publish
+  // banned content straight to the public wall.
+  return privileged ? visiblePublication('privileged_author') : null
 }
 
 export const publicationStateFor = async ({
@@ -34,7 +36,7 @@ export const publicationStateFor = async ({
   tags = [],
   requirePostApproval = false
 } = {}) => {
-  const immediate = immediatePublicationState({ user, admin, lostFound })
+  const immediate = immediatePublicationState({ user, admin })
   if (immediate) return immediate
   const review = await reviewPostContent(text, { title, tags })
   if (review.blocked) {
