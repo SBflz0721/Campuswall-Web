@@ -97,19 +97,26 @@ export class ReportStore {
     ))
   }
 
-  create(messageId, input = {}) {
+  create(messageId, input = {}, { sourceKey = '' } = {}) {
     const report = normalizeReport({
       ...input,
       id: randomUUID().replaceAll('-', ''),
-      timestamp: nowText()
+      timestamp: nowText(),
+      ...(sourceKey ? { source_key: sourceKey } : {})
     })
     const reports = this.pending()
     if (countReports(reports) + countReports(this.processed()) >= config.maxReportRecords) {
       fail('举报数量已达上限，请稍后再试', 503)
     }
     const key = String(messageId)
-    reports[key] ??= []
-    reports[key].push(report)
+    const existing = Array.isArray(reports[key]) ? reports[key] : []
+    // One pending report per source per message. Without this, a single client could
+    // repeat-submit the same report forever, flood the moderation queue and eventually
+    // exhaust the global cap, which takes reporting offline for everyone else.
+    if (sourceKey && existing.some((item) => item.source_key === sourceKey)) {
+      fail('你已经举报过这条留言，请等待处理', 409)
+    }
+    reports[key] = [...existing, report]
     writeJson(pendingPath, reports)
     return report
   }

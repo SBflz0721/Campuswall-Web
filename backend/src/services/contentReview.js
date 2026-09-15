@@ -10,7 +10,18 @@ const asciiWordPattern = /^[a-z0-9]+$/i
 export const normalizeReviewText = (value = '') => String(value || '')
   .normalize('NFKC')
   .toLowerCase()
-  .replace(/[\s\u00a0\u200b\u200c\u200d\ufeff]+/g, '')
+  // Remove every separator (punctuation, symbols, whitespace, zero-width) so that
+  // inserting an extra character inside a banned word no longer bypasses the lexicon
+  // (e.g. "下·流" / "下流" both normalise to "下流").
+  .replace(/[^\p{L}\p{N}]+/gu, '')
+
+// Same normalisation but keeps word boundaries as single spaces. Latin words need this
+// form for their word-boundary regex, because the compact form glues them together.
+const normalizeSpacedReviewText = (value = '') => String(value || '')
+  .normalize('NFKC')
+  .toLowerCase()
+  .replace(/[^\p{L}\p{N}]+/gu, ' ')
+  .trim()
 
 const insultWords = [...new Set(
   (Array.isArray(loadedWords) ? loadedWords : [])
@@ -23,14 +34,15 @@ const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 export const listInsultWords = () => [...insultWords]
 
 export const findInsultHits = (value = '', { limit = 8 } = {}) => {
-  const haystack = normalizeReviewText(value)
-  if (!haystack) return []
+  const compactHaystack = normalizeReviewText(value)
+  if (!compactHaystack) return []
+  const spacedHaystack = normalizeSpacedReviewText(value)
   const hits = []
   for (const word of insultWords) {
     if (!word) continue
     const matched = asciiWordPattern.test(word)
-      ? new RegExp(`(?<![a-z0-9])${escapeRegExp(word)}(?![a-z0-9])`, 'i').test(haystack)
-      : haystack.includes(word)
+      ? new RegExp(`(?<![a-z0-9])${escapeRegExp(word)}(?![a-z0-9])`, 'i').test(spacedHaystack)
+      : compactHaystack.includes(word)
     if (!matched) continue
     hits.push(word)
     if (hits.length >= limit) break

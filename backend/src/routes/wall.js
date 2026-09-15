@@ -8,7 +8,7 @@ import { allowedFile, makeTinyFiles, safeBasename, uploadPath } from '../service
 import { appendAdminLog, nowText } from '../services/jsonStore.js'
 import { isLostFoundMessage, isLostFoundTag, normalizeLostFoundType } from '../services/lostFound.js'
 import { messageStore } from '../services/messageStore.js'
-import { contentWriteRateLimit, interactionRateLimit } from '../services/rateLimit.js'
+import { contentWriteRateLimit, interactionRateLimit, reactionPerMessageRateLimit } from '../services/rateLimit.js'
 import { userStore } from '../services/userStore.js'
 import { visitorKeyFromRequest } from '../services/visitorIdentity.js'
 import { settingsStore } from '../services/settingsStore.js'
@@ -190,33 +190,27 @@ wallRouter.post('/comment/:messageId', contentWriteRateLimit, form.none(), async
   res.json(result)
 }))
 
-wallRouter.post('/like/:messageId', interactionRateLimit, asyncRoute(async (req, res) => {
+wallRouter.post('/like/:messageId', interactionRateLimit, reactionPerMessageRateLimit, asyncRoute(async (req, res) => {
   const messageId = Number(req.params.messageId)
   if (!await allowLostFoundInteraction(req, res, messageId)) return
   const identity = await reactionIdentity(req, res)
   if (rejectFreshVisitorVote(res, identity)) return
-  const legacyReaction = identity.user && cookieIds(req, 'likes').includes(messageId)
-    ? 1
-    : (identity.user && cookieIds(req, 'dislikes').includes(messageId) ? -1 : 0)
-  const result = await messageStore.likeMessage(messageId, identity.key, legacyReaction)
+  const result = await messageStore.likeMessage(messageId, identity.key)
   if (result.success) updateReactionCookies(req, res, messageId, result.reaction)
   res.json(result)
 }))
 
-wallRouter.post('/dislike/:messageId', interactionRateLimit, asyncRoute(async (req, res) => {
+wallRouter.post('/dislike/:messageId', interactionRateLimit, reactionPerMessageRateLimit, asyncRoute(async (req, res) => {
   const messageId = Number(req.params.messageId)
   if (!await allowLostFoundInteraction(req, res, messageId)) return
   const identity = await reactionIdentity(req, res)
   if (rejectFreshVisitorVote(res, identity)) return
-  const legacyReaction = identity.user && cookieIds(req, 'likes').includes(messageId)
-    ? 1
-    : (identity.user && cookieIds(req, 'dislikes').includes(messageId) ? -1 : 0)
-  const result = await messageStore.dislikeMessage(messageId, identity.key, legacyReaction)
+  const result = await messageStore.dislikeMessage(messageId, identity.key)
   if (result.success) updateReactionCookies(req, res, messageId, result.reaction)
   res.json(result)
 }))
 
-wallRouter.post('/poll/:messageId/vote', interactionRateLimit, asyncRoute(async (req, res) => {
+wallRouter.post('/poll/:messageId/vote', interactionRateLimit, reactionPerMessageRateLimit, asyncRoute(async (req, res) => {
   const messageId = Number(req.params.messageId)
   const optionId = String(req.body?.option_id || '').trim()
   if (!Number.isSafeInteger(messageId) || messageId <= 0 || !/^[a-zA-Z0-9-]{1,80}$/.test(optionId)) {
